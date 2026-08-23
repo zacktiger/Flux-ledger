@@ -9,13 +9,17 @@
 // ============================================================================
 import { redirect } from 'next/navigation';
 import { executeTransfer, DEFAULT_STRATEGY } from '../lib/transfer/index.js';
-import { rupeesToPaise } from '../lib/money.js';
 
 export async function sendMoney(formData) {
   const sourceAccountId = formData.get('sourceAccountId');
   const destAccountId = formData.get('destAccountId');
   const strategy = formData.get('strategy') || DEFAULT_STRATEGY;
-  const amountMinor = rupeesToPaise(formData.get('amount'));
+
+  // MoneyInput submits integer paise, so there is no decimal string to parse
+  // here and no rounding decision to get wrong. It is still validated: the
+  // value arrived over the wire and anyone can post whatever they like to a
+  // server action.
+  const amountMinor = Number(formData.get('amountMinor'));
 
   if (!Number.isInteger(amountMinor) || amountMinor <= 0) {
     redirect(`/?error=${encodeURIComponent('Enter an amount greater than zero.')}`);

@@ -8,6 +8,8 @@ import { query } from '../lib/db.js';
 import { formatPaise } from '../lib/money.js';
 import { STRATEGY_NAMES, STRATEGIES, DEFAULT_STRATEGY } from '../lib/transfer/index.js';
 import { sendMoney } from './actions.js';
+import { MoneyInput } from './components/MoneyInput.js';
+import { SubmitButton } from './components/SubmitButton.js';
 
 // Balances change on every transfer, so this page is never cached.
 export const dynamic = 'force-dynamic';
@@ -115,10 +117,7 @@ export default async function HomePage({ searchParams }) {
           </div>
 
           <div className="form-row">
-            <div>
-              <label htmlFor="amount">Amount (rupees)</label>
-              <input id="amount" name="amount" type="number" step="0.01" min="0.01" defaultValue="10.00" />
-            </div>
+            <MoneyInput />
 
             <div>
               {/* Exposing the strategy picker in the UI is unusual for a
@@ -136,7 +135,7 @@ export default async function HomePage({ searchParams }) {
             </div>
           </div>
 
-          <button type="submit">Send</button>
+          <SubmitButton />
         </form>
       </section>
 
