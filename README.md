@@ -49,6 +49,28 @@ rounding bug worth deferring. The same code in production is a hole in the balan
 
 ---
 
+## If you only read four things
+
+- **[Double-entry did not prevent the overdraft](#two-invariants-and-only-one-of-them-is-free)** —
+  the global sum stayed at exactly 0 even during the failing run, because every transfer still wrote
+  a matched debit and credit. Structure and business rules fail independently, and conflating them
+  is how a ledger gets called "safe" when it is not.
+
+- **[The fastest strategy is the broken one](#which-one-would-i-actually-ship)** — naive wins on
+  throughput because it skips the coordination correctness requires. Any benchmark that ranks these
+  by speed alone crowns the wrong winner. The section picks one to ship and then argues against it.
+
+- **[The ledger refuses TRUNCATE, not just UPDATE and DELETE](#the-ledger-is-append-only-enforced-by-the-database)** —
+  row-level triggers do not fire on TRUNCATE, so without a statement-level trigger one command
+  erases every transaction and the other two triggers never run. This is also why the benchmark
+  creates fresh accounts instead of resetting.
+
+- **[The bug grows with your traffic](#the-bug-scales-with-your-success)** — −₹70 at ten concurrent
+  connections, −₹360 at eighty. It is invisible in low-concurrency testing and worst exactly when
+  you succeed.
+
+---
+
 ## Two invariants, and only one of them is free
 
 `SELECT * FROM ledger_invariant;` after the entire benchmark run:
