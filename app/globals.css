@@ -1,0 +1,393 @@
+/* ===========================================================================
+   Flux styles. Plain CSS, no framework - the interesting part of this project
+   is in db/ and lib/transfer/, and the UI exists to make it visible.
+   =========================================================================== */
+
+:root {
+  --bg: #0b0d12;
+  --surface: #12151d;
+  --surface-raised: #181c26;
+  --border: #242a38;
+  --text: #e7eaf0;
+  --text-dim: #99a1b3;
+  --text-faint: #646c7e;
+  --accent: #5b8def;
+  --positive: #3ecf8e;
+  --negative: #f25f5f;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* --- header --------------------------------------------------------------- */
+
+.site-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 20px 32px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.brand-tagline {
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+.site-main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+/* --- generic building blocks ---------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 22px;
+  margin-bottom: 24px;
+}
+
+.card h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.card-hint {
+  margin: 0 0 18px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+.faint {
+  color: var(--text-faint);
+}
+
+/* --- accounts ------------------------------------------------------------- */
+
+.account-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.account {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.account-name {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.account-balance {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- forms ---------------------------------------------------------------- */
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+select,
+input {
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+select:focus,
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  padding: 10px 20px;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  filter: brightness(1.1);
+}
+
+.form-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(242, 95, 95, 0.12);
+  border: 1px solid rgba(242, 95, 95, 0.3);
+  color: #f6a3a3;
+  font-size: 13px;
+}
+
+/* --- tables --------------------------------------------------------------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  font-weight: 500;
+  padding: 0 12px 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+td {
+  padding: 11px 12px 11px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+.amount {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* --- status pills --------------------------------------------------------- */
+
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.pill-posted {
+  background: rgba(62, 207, 142, 0.12);
+  border-color: rgba(62, 207, 142, 0.3);
+  color: var(--positive);
+}
+
+.pill-failed {
+  background: rgba(242, 95, 95, 0.12);
+  border-color: rgba(242, 95, 95, 0.3);
+  color: #f26b6b;
+}
+
+.pill-pending {
+  background: rgba(230, 178, 76, 0.12);
+  border-color: rgba(230, 178, 76, 0.3);
+  color: #e6b24c;
+}
+
+/* --- transaction detail --------------------------------------------------- */
+
+.detail-header {
+  margin-bottom: 24px;
+}
+
+.detail-amount {
+  font-family: var(--mono);
+  font-size: 34px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  margin: 6px 0 10px;
+}
+
+.detail-route {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.fact-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+.fact-value {
+  font-size: 14px;
+  font-family: var(--mono);
+  word-break: break-all;
+}
+
+/* --- the event timeline --------------------------------------------------- */
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-item {
+  position: relative;
+  padding: 0 0 20px 26px;
+  border-left: 1px solid var(--border);
+}
+
+.timeline-item:last-child {
+  border-left-color: transparent;
+  padding-bottom: 0;
+}
+
+/* The dot on the spine. Positioned to straddle the 1px border above. */
+.timeline-dot {
+  position: absolute;
+  left: -5px;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 2px solid var(--surface);
+}
+
+.timeline-dot-posted {
+  background: var(--positive);
+}
+
+.timeline-dot-failed {
+  background: #f26b6b;
+}
+
+.timeline-dot-conflict {
+  background: #e6b24c;
+}
+
+.timeline-type {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.timeline-time {
+  color: var(--text-faint);
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.timeline-detail {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 18px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.back-link:hover {
+  color: var(--text);
+}
+
+.empty {
+  color: var(--text-faint);
+  font-size: 14px;
+  padding: 8px 0;
+}
