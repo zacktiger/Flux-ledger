@@ -1,0 +1,22 @@
+{
+  "name": "flux",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A double-entry ledger that is provably correct under concurrent load.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "db:reset": "node --env-file=.env.local scripts/migrate.mjs --reset",
+    "bench": "node --env-file=.env.local scripts/bench.mjs",
+    "test:idempotency": "node --env-file=.env.local scripts/idempotency-test.mjs"
+  },
+  "dependencies": {
+    "next": "15.5.4",
+    "pg": "8.16.3",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  }
+}
