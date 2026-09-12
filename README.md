@@ -49,7 +49,7 @@ rounding bug worth deferring. The same code in production is a hole in the balan
 
 ---
 
-## If you only read four things
+## If you only read five things
 
 - **[Double-entry did not prevent the overdraft](#two-invariants-and-only-one-of-them-is-free)** —
   the global sum stayed at exactly 0 even during the failing run, because every transfer still wrote
@@ -64,6 +64,11 @@ rounding bug worth deferring. The same code in production is a hole in the balan
   row-level triggers do not fire on TRUNCATE, so without a statement-level trigger one command
   erases every transaction and the other two triggers never run. This is also why the benchmark
   creates fresh accounts instead of resetting.
+
+- **[One execution path, four swappable strategies](#the-shape-of-the-system)** — the diagrams show
+  what the benchmark actually holds constant. Validation, idempotency, ledger writes and the event
+  log are shared code; only the guard around the critical section changes, which is what makes the
+  comparison fair.
 
 - **[The bug grows with your traffic](#the-bug-scales-with-your-success)** — −₹70 at ten concurrent
   connections, −₹360 at eighty. It is invisible in low-concurrency testing and worst exactly when
@@ -186,6 +191,195 @@ conflict-detecting strategies rarely conflict and the gap narrows sharply.
 
 ## How it works
 
+### The shape of the system
+
+Four entry points, one execution path, one database. There is no service layer and no API between
+the pages and Postgres — the pages *are* the service layer.
+
+```mermaid
+flowchart TB
+    subgraph clients["Entry points"]
+        form["Send form<br/>app/actions.js<br/>server action"]
+        api["POST /api/transfers<br/>app/api/transfers/route.js<br/>exists so idempotency<br/>can be shown with curl"]
+        bench["scripts/bench.mjs<br/>200 concurrent"]
+        idem["scripts/idempotency-test.mjs<br/>100 requests, 1 key"]
+    end
+
+    exec["executeTransfer()<br/>lib/transfer/index.js<br/>validate · look up accounts<br/>claim idempotency key<br/>create transfer row · record outcome"]
+
+    subgraph strategies["Concurrency strategy — the only part that varies"]
+        naive["naive<br/>no lock"]
+        forupdate["for-update<br/>row lock"]
+        optimistic["optimistic<br/>CAS + retry"]
+        serializable["serializable<br/>40001 + retry"]
+    end
+
+    shared["lib/transfer/shared.js<br/>getBalanceMinor · postLedgerEntries<br/>assertSufficientFunds · recordEvent<br/>retryOnConflict"]
+    db[("Postgres 16<br/>lib/db.js — one pool<br/>DB_POOL_MAX connections")]
+    read["Read paths<br/>app/page.js, app/transfers/[id]<br/>React Server Components,<br/>SQL with no API in between"]
+
+    form --> exec
+    api --> exec
+    bench --> exec
+    idem --> exec
+    exec --> naive & forupdate & optimistic & serializable
+    naive & forupdate & optimistic & serializable --> shared
+    shared --> db
+    exec --> db
+    read --> db
+```
+
+The important thing in that picture is what is *not* branching: *everything above the strategy box
+is identical for all four runs of the benchmark.* Same validation, same idempotency, same ledger
+writes, same event log. The only variable is how the critical section is guarded, which is what
+makes the benchmark a fair comparison rather than four different programs.
+
+### The path of one transfer
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Caller
+    participant E as executeTransfer
+    participant S as Strategy
+    participant PG as Postgres
+
+    C->>E: from, to, amountMinor, strategy, idempotencyKey?
+
+    E->>E: validate shape, amount > 0, from is not to
+    Note right of E: throws on malformed input —<br/>the only thing it throws for
+
+    E->>PG: SELECT id, kind FROM accounts WHERE id IN (from, to)
+    Note right of E: kind matters — system accounts<br/>are allowed to go negative
+
+    E->>PG: INSERT INTO transfers (…, idempotency_key)<br/>ON CONFLICT DO NOTHING
+
+    alt zero rows — the key was already claimed
+        PG-->>E: no row
+        E->>PG: SELECT the transfer that owns the key
+        E-->>C: replayed: true, plus the winner's outcome
+        Note over E,C: No second transfer, ever. The key is<br/>claimed before any money moves.
+    else row created — this request owns the transfer
+        PG-->>E: transfer row, status 'pending'
+        E->>S: execute(transfer, sourceKind)
+
+        rect rgba(128,128,128,0.12)
+            Note over S,PG: The critical section — the only part<br/>that differs between strategies
+            S->>PG: BEGIN, isolation level varies
+            S->>PG: balance = SUM(amount_minor), never a column
+            S->>S: assertSufficientFunds()
+            S->>PG: INSERT 2 ledger entries, -amount and +amount
+            S->>PG: UPDATE transfers SET status = 'posted'
+            S->>PG: COMMIT
+        end
+
+        alt the strategy commits
+            S-->>E: retries
+            E->>PG: event 'transfer.posted', on its own connection
+            E-->>C: status 'posted'
+        else insufficient funds, or retries exhausted
+            S-->>E: throw TransferError
+            Note over S,PG: its transaction has already rolled back —<br/>no ledger entries exist
+            E->>PG: mark failed + event, on a FRESH connection
+            E-->>C: status 'failed', with a reason
+        end
+    end
+```
+
+Three steps in there are load-bearing, and all three are easy to get wrong:
+
+**The idempotency key is claimed before any money moves.** It is a `UNIQUE` column and an
+`ON CONFLICT DO NOTHING` — not a cache lookup, not a check-then-insert. Two identical requests
+racing at the same instant cannot both get past that step, because the *database* picks the winner.
+The loser is handed the winner's outcome. This is the mechanism `npm run test:idempotency` fires 100
+concurrent requests at.
+
+**A business failure is a return value, not an exception.** `executeTransfer` *returns*
+`{ status: 'failed' }` for insufficient funds or exhausted retries, and only *throws* for a
+malformed request — unknown account, bad amount, unknown strategy. Both callers depend on that
+split: the server action renders "insufficient funds" as an ordinary outcome, and the API route maps
+it to a normal response rather than a 500. Backwards, and "you don't have the money" becomes a
+crash.
+
+**The failure is recorded on a new connection.** By the time `executeTransfer` learns the strategy
+failed, that strategy's transaction has already rolled back — writing the explanation *into* that
+transaction would roll the explanation back with it. Retry events are written the same way, on their
+own connection, which is the only reason the timeline can show attempts that never committed.
+
+### The data model
+
+```mermaid
+erDiagram
+    users ||--o{ accounts : owns
+    accounts ||--o{ transfers : "source / dest"
+    transfers ||--|{ ledger_entries : "exactly 2, summing to zero"
+    transfers ||--o{ events : "timeline, written live"
+
+    users {
+        uuid id PK
+        text email UK "bench+ rows are hidden from the UI"
+    }
+    accounts {
+        uuid id PK
+        text kind "user or system - system may go negative"
+        bigint version "compare-and-swap target for the optimistic strategy"
+        none no_balance_column "there is no balance column, by design"
+    }
+    transfers {
+        uuid id PK
+        bigint amount_minor "paise in BIGINT, never a float"
+        text status "pending, posted, failed"
+        text strategy "which concurrency strategy moved this money"
+        text idempotency_key UK "UNIQUE - this is the whole mechanism"
+        text failure_reason "why, when status is failed"
+    }
+    ledger_entries {
+        bigint amount_minor "negative is a debit, positive is a credit"
+        none append_only "UPDATE, DELETE and TRUNCATE all blocked by trigger"
+    }
+    events {
+        text type "transfer.posted, transfer.conflict, transfer.failed"
+        jsonb detail
+    }
+```
+
+Two views do the job a `balance` column would do badly:
+
+| View | What it answers |
+|---|---|
+| `account_balances` | `SUM(amount_minor)` per account — the only definition of a balance in the system |
+| `ledger_invariant` | Both invariants at once, queryable at any instant: global sum, unbalanced transfers, and overdrawn **user** accounts |
+
+`ledger_invariant` reports the two invariants separately on purpose, because
+[they fail independently](#two-invariants-and-only-one-of-them-is-free), and the entire result of
+this project lives in the gap between them.
+
+### Where the concurrency actually lives
+
+`DB_POOL_MAX` is not a tuning knob, it is the independent variable of the experiment. `lib/db.js`
+opens exactly one pool per process, and its size is the real ceiling on how many transfers are
+genuinely simultaneous *inside Postgres* — everything beyond it queues in the client, where it
+cannot race. Firing 200 requests at a pool of 10 does not test 200-way concurrency; it tests 10-way
+concurrency twenty times over, which is exactly why
+[the overdraft grows with the pool](#the-bug-scales-with-your-success).
+
+The same file registers a `pg` type parser for type oid 20, so `BIGINT` arrives as a JavaScript
+number rather than a string. Without it, `balance >= amount` silently becomes a *string* comparison,
+and `"900" >= "1000"` is true. Amounts are paise in `BIGINT` everywhere, and JS integers are exact to
+2^53 — about 90 trillion rupees — so the conversion is safe.
+
+### Module map
+
+| Path | Responsibility |
+|---|---|
+| `lib/db.js` | The pool, the BIGINT parser, `withTransaction(fn, { isolationLevel })` |
+| `lib/transfer/index.js` | `executeTransfer` — everything that does not vary — plus the strategy registry |
+| `lib/transfer/shared.js` | The mechanics all four strategies reuse, so each strategy file stays short enough to read beside the others |
+| `lib/transfer/*.js` | One file per strategy. Add a fifth by exporting `{ name, label, description, execute }` and adding one line to `index.js`; the UI and the benchmark pick it up with no other change |
+| `db/001_schema.sql` | Tables, the two views, and the three append-only triggers |
+| `scripts/bench.mjs` | The deliverable. Overwrites `docs/benchmark-results.md` |
+| `app/` | App Router. Server Components read SQL directly; the send form posts to a server action |
+
 ### There is no balance column
 
 Not in `accounts`, not anywhere. Grep for it. A balance is a `SUM` over the ledger, exposed as a
@@ -263,6 +457,17 @@ npm run db:reset                    # the only way to clear the ledger
 ```
 
 `npm run bench` writes `docs/benchmark-results.md`.
+
+### Or with Docker, without installing anything
+
+```bash
+docker compose up --build            # http://localhost:3000
+docker compose run --rm bench        # the table above
+docker compose run --rm idempotency
+```
+
+Details, and why the containerised numbers differ from the committed ones, in
+[`docs/deployment.md`](docs/deployment.md).
 
 ---
 
