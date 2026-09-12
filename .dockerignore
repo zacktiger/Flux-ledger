@@ -1,0 +1,14 @@
+# Build context hygiene. Everything the image needs is copied explicitly in the
+# Dockerfile; everything below is either a local secret, a host-specific build
+# artifact, or bulk that would bust the layer cache on every rebuild.
+.git
+.gitignore
+node_modules
+.next
+.env.local
+.env
+*.log
+.playwright-mcp
+docs/benchmark-results.md
+README.md
+CLAUDE.md

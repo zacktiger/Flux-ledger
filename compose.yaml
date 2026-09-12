@@ -1,0 +1,122 @@
+# =============================================================================
+# Flux - the whole demo in one command.
+#
+#   docker compose up --build            web UI on http://localhost:3000
+#   docker compose run --rm bench        THE deliverable: 200 concurrent transfers
+#   docker compose run --rm idempotency  100 requests, one idempotency key
+#   docker compose run --rm reset        drop the schema and re-seed
+#   docker compose down -v               stop and delete the ledger volume
+#
+# Copy .env.docker.example to .env to override any of the defaults below.
+# =============================================================================
+name: flux
+
+# Everything that runs the Flux image shares this. The scripts are invoked as
+# `node scripts/x.mjs`, NOT via `npm run` as they are on a laptop: the npm
+# scripts pass `--env-file=.env.local`, and in a container the environment is
+# already set by Compose, with no such file to read.
+x-app: &app
+  build:
+    context: .
+  image: flux:local
+  environment:
+    DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/flux
+    # The real ceiling on how many transfers are concurrent *inside* Postgres.
+    # Changing it changes the benchmark results.
+    DB_POOL_MAX: ${DB_POOL_MAX:-40}
+    # Simulated latency between the read and the write in the naive strategy.
+    # Raise it to widen the race window on purpose.
+    NAIVE_THINK_MS: ${NAIVE_THINK_MS:-0}
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    # Default max_connections is 100, which the web pool and a benchmark pool
+    # can exhaust between them once DB_POOL_MAX is raised.
+    command: ["postgres", "-c", "max_connections=200"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # 5439 on the host on purpose: 5432-5435 are already taken on the
+      # development machine (Postgres 16 on 5433, Postgres 14 on 5435).
+      # This port is only for poking at the container with psql; the app
+      # reaches Postgres over the Compose network, not through it.
+      - "${DB_PORT:-5439}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # ---------------------------------------------------------------------------
+  # Runs to completion before `web` starts. `--if-needed` makes it a no-op when
+  # the volume already holds a ledger - the ledger is append-only and must
+  # survive a restart of the stack.
+  migrate:
+    <<: *app
+    command: ["node", "scripts/migrate.mjs", "--if-needed"]
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  web:
+    <<: *app
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      # The home page reads balances out of Postgres, so a 200 here means the
+      # server and the database are both genuinely up.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r => { if (!r.ok) throw 0 }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # On-demand jobs. They sit behind a profile so `docker compose up` never
+  # starts them; `docker compose run` enables their profile automatically.
+  bench:
+    <<: *app
+    profiles: ["jobs"]
+    command: ["node", "scripts/bench.mjs"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      # The run overwrites docs/benchmark-results.md, which is a committed
+      # artifact of this project - bind it back out to the host.
+      - ./docs:/app/docs
+
+  idempotency:
+    <<: *app
+    profiles: ["jobs"]
+    command: ["node", "scripts/idempotency-test.mjs"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # The only way to clear the ledger without deleting the volume: it drops
+  # schema public, which takes the append-only triggers with it.
+  reset:
+    <<: *app
+    profiles: ["jobs"]
+    command: ["node", "scripts/migrate.mjs", "--reset"]
+
+volumes:
+  pgdata:

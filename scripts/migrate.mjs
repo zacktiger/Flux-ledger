@@ -3,6 +3,7 @@
 // ============================================================================
 //   npm run db:migrate    apply schema + seed (fails if tables already exist)
 //   npm run db:reset      drop everything first, then do the same
+//   ... --if-needed       do nothing if the schema is already there (Docker)
 //
 // This is not a real migration tool - there are no versioned up/down steps and
 // no migrations table. v1 has one schema file, and the benchmark wants a clean
@@ -15,6 +16,13 @@ import pg from 'pg';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shouldReset = process.argv.includes('--reset');
+
+// The container entrypoint runs this on every `docker compose up`, and the
+// schema file is not idempotent. `--if-needed` turns "already migrated" from
+// an error into a no-op, so restarting the stack never touches a ledger that
+// is already there. It is not the local default: on a laptop, a migrate that
+// silently does nothing hides a real mistake.
+const onlyIfNeeded = process.argv.includes('--if-needed');
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -66,6 +74,17 @@ async function run() {
   await client.connect();
 
   try {
+    if (onlyIfNeeded && !shouldReset) {
+      const { rowCount } = await client.query(
+        `SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'ledger_entries'`
+      );
+
+      if (rowCount > 0) {
+        console.log('  schema already present - nothing to do\n');
+        return;
+      }
+    }
+
     if (shouldReset) {
       // Dropping and recreating the schema is the fastest way to get back to
       // a known-empty database - it takes the tables, views, triggers and the
