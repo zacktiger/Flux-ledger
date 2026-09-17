@@ -12,6 +12,7 @@
     "db:reset": "node --env-file=.env.local scripts/migrate.mjs --reset",
     "db:migrate:prod": "node --env-file=.env.prod.local scripts/migrate.mjs",
     "db:reset:prod": "node --env-file=.env.prod.local scripts/migrate.mjs --reset",
+    "demo:live": "node --env-file=.env.prod.local scripts/demo-live.mjs",
     "bench": "node --env-file=.env.local scripts/bench.mjs",
     "test:idempotency": "node --env-file=.env.local scripts/idempotency-test.mjs"
   },
