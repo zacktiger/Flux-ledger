@@ -116,7 +116,7 @@ laptop, where its numbers mean something.
    out of connections fast. `sslmode=require` is handled by `pg` itself — `lib/db.js` needs no
    change.
 
-3. Locally, create `.env.production.local` (gitignored, same shape as `.env.local`):
+3. Locally, create `.env.prod.local` (gitignored, same shape as `.env.local`):
 
    ```
    DATABASE_URL=postgresql://...-pooler...neon.tech/neondb?sslmode=require
@@ -149,6 +149,11 @@ Deploy. Pushes to `main` redeploy on their own.
 `DB_POOL_MAX` is the only value that should differ from local, and the reason is the one above:
 40 is the point of the benchmark, but on Vercel the pool is per-instance, so a big number buys
 no extra concurrency and just holds Neon connections open.
+
+The file is deliberately **not** called `.env.production.local`. Next.js loads that exact name
+itself, ahead of `.env.local`, which silently points `npm run build` and `npm run start` on your
+laptop at the deployed database. `.env.prod.local` means nothing to Next.js, so only the two
+`:prod` scripts read it.
 
 ### What to expect
 
