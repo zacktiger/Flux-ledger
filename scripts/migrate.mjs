@@ -45,7 +45,18 @@ async function ensureDatabaseExists() {
   maintenanceUrl.pathname = '/postgres';
 
   const client = new pg.Client({ connectionString: maintenanceUrl.toString() });
-  await client.connect();
+
+  // Managed Postgres (Neon, Supabase, Render) creates the database for you and
+  // usually does not grant the app role CREATE DATABASE, or even a reachable
+  // `postgres` maintenance database. Failing here would be wrong: the database
+  // we are about to connect to already exists. Warn and carry on - if it really
+  // is missing, the very next connection fails with a clear error anyway.
+  try {
+    await client.connect();
+  } catch (error) {
+    console.log(`  skipping database check (${error.message.trim()})`);
+    return;
+  }
 
   try {
     const { rowCount } = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [

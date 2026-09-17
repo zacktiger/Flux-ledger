@@ -94,3 +94,67 @@ strategy here holds a transaction open across multiple statements on one connect
 transaction-pooling proxy gives you neither a stable pool size nor a guaranteed sticky session —
 so the numbers stop meaning anything, and `SELECT ... FOR UPDATE` stops behaving the way the
 `for-update` strategy assumes.
+
+That is an argument about the *benchmark*, not about the app. A hosted link where someone can
+send a transfer and watch the event timeline is still worth having, and it is free.
+
+## The free path: a public link in ~10 minutes
+
+**Neon** for Postgres, **Vercel** for the app. No card, no expiry. The benchmark stays on your
+laptop, where its numbers mean something.
+
+### 1. Database
+
+1. Sign up at <https://neon.tech> with GitHub and create a project.
+2. Copy the **pooled** connection string — its host contains `-pooler`:
+
+   ```
+   postgresql://neondb_owner:PASSWORD@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
+   ```
+
+   Pooled matters: each Vercel instance opens its own `pg` pool, and the direct endpoint runs
+   out of connections fast. `sslmode=require` is handled by `pg` itself — `lib/db.js` needs no
+   change.
+
+3. Locally, create `.env.production.local` (gitignored, same shape as `.env.local`):
+
+   ```
+   DATABASE_URL=postgresql://...-pooler...neon.tech/neondb?sslmode=require
+   DB_POOL_MAX=5
+   ```
+
+4. Apply the schema and seed:
+
+   ```bash
+   npm run db:migrate:prod     # npm run db:reset:prod wipes it later
+   ```
+
+   It prints the seeded accounts and `invariant ok: true`. Neon does expose a `postgres`
+   maintenance database, so the script's `CREATE DATABASE` precheck runs normally and reports
+   `database "neondb" already exists`. On a provider that does not expose one, the precheck now
+   logs why it skipped and carries on instead of aborting the migration.
+
+### 2. App
+
+Import the repo at <https://vercel.com> (Add New → Project). Keep every build setting — the
+Next.js preset is correct. Add two environment variables before the first deploy:
+
+| Name | Value |
+|---|---|
+| `DATABASE_URL` | the same pooled Neon string |
+| `DB_POOL_MAX` | `5` |
+
+Deploy. Pushes to `main` redeploy on their own.
+
+`DB_POOL_MAX` is the only value that should differ from local, and the reason is the one above:
+40 is the point of the benchmark, but on Vercel the pool is per-instance, so a big number buys
+no extra concurrency and just holds Neon connections open.
+
+### What to expect
+
+- Neon's free compute sleeps after ~5 minutes idle; the first request after that takes a second
+  or two to wake it. Nothing is lost.
+- The hosted ledger is public and append-only — anyone with the link can transfer, and nothing
+  can delete the rows. Reseed with `npm run db:reset:prod`.
+- Do not point `npm run bench` at Neon. It would measure your Wi-Fi rather than the strategies,
+  and leave a few hundred `bench:` rows in the hosted ledger.
